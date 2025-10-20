@@ -1,6 +1,6 @@
 # Data Inventory
 
-_Last updated: 2025-10-14_
+_Last updated: 2025-10-19_
 
 ## Usage and core components
 
@@ -489,9 +489,9 @@ ETL:
 
 # Policy Notes
 
-**Effective Date: October 14, 2025**
+**Effective Date: October 19, 2025**
 
-**Last Updated: October 14, 2025**
+**Last Updated: October 19, 2025**
 
 ### 1. Purpose and Scope
     This Data Policy governs the collection, processing, storage, and usage of financial data within this project. 
