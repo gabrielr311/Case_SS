@@ -1,0 +1,290 @@
+# ============================================================================
+# RAGFlow Configuration - Optimized for Brazilian Financial Documents
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# SERVICE ENDPOINTS
+# ----------------------------------------------------------------------------
+ragflow:
+  host: ${RAGFLOW_HOST:-0.0.0.0}
+  http_port: 9380
+
+admin:
+  host: ${RAGFLOW_HOST:-0.0.0.0}
+  http_port: 9381
+
+# ----------------------------------------------------------------------------
+# DATABASE CONFIGURATIONS
+# ----------------------------------------------------------------------------
+mysql:
+  name: '${MYSQL_DBNAME:-rag_flow}'
+  user: '${MYSQL_USER:-root}'
+  password: '${MYSQL_PASSWORD:-infini_rag_flow}'
+  host: '${MYSQL_HOST:-mysql}'
+  port: 3306
+  max_connections: 900
+  stale_timeout: 300
+  max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
+
+minio:
+  user: '${MINIO_USER:-rag_flow}'
+  password: '${MINIO_PASSWORD:-infini_rag_flow}'
+  host: '${MINIO_HOST:-minio}:9000'
+
+redis:
+  db: 1
+  password: '${REDIS_PASSWORD:-infini_rag_flow}'
+  host: '${REDIS_HOST:-redis}:6379'
+
+# ----------------------------------------------------------------------------
+# SEARCH ENGINES
+# ----------------------------------------------------------------------------
+
+os:
+  hosts: 'http://${OS_HOST:-opensearch01}:9201'
+  username: '${OS_USER:-admin}'
+  password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+
+# ----------------------------------------------------------------------------
+# VECTOR STORE CONFIGURATION
+# ----------------------------------------------------------------------------
+vector_store:
+  default: opensearch
+  opensearch:
+    host: http://ragflow-opensearch-01:9201
+    username: admin
+    password: ${OPENSEARCH_PASSWORD}
+    embedding_dim: 1024  # mGTE Large produces 1024-dimensional vectors
+    index_prefix: ragflow_vector
+    
+    # Optimization for financial documents
+    refresh_interval: 5s
+    number_of_shards: 1
+    number_of_replicas: 0
+    max_result_window: 10000
+
+# ----------------------------------------------------------------------------
+# EMBEDDING MODELS
+# ----------------------------------------------------------------------------
+embeddings:
+  bge-m3:
+    provider: "Ollama"
+    base_url: "http://ollama:11434"
+    model_name: "bge-m3:567m"
+    # mGTE is optimized for multilingual (Portuguese) semantic search
+    # Produces 1024-dimensional embeddings
+
+# ----------------------------------------------------------------------------
+# LLM MODELS
+# ----------------------------------------------------------------------------
+llms:
+  qwen_7b:
+    type: ollama
+    base_url: http://ollama:11434
+    model: qwen2.5:7b
+    
+    # Generation parameters
+    max_tokens: 2048              # Maximum response length
+    temperature: 0.1              # Low = more factual, deterministic
+    top_p: 0.95                   # Nucleus sampling
+    top_k: 40                     # Top-k sampling
+    repeat_penalty: 1.1           # Prevent repetition
+    
+    # Context configuration
+    num_ctx: 32768                # Context window (32K tokens)
+    num_predict: 2048             # Max tokens to generate
+    
+    # Performance
+    num_thread: 8                 # CPU threads (adjust to your system)
+    num_gpu: 1                    # Use GPU
+    
+    # Streaming
+    stream: true                  # Enable streaming responses
+    
+# ----------------------------------------------------------------------------
+# RERANKER MODEL
+# ----------------------------------------------------------------------------
+reranker:
+  bge_reranker:
+    provider: "Ollama"
+    base_url: "http://ollama:11434"
+    model_name: "bge-reranker-v2-m3"
+    # Multilingual reranker for improved precision
+
+# ----------------------------------------------------------------------------
+# DEFAULT MODELS
+# ----------------------------------------------------------------------------
+default_embedding: bge-m3
+default_llm: qwen_7b
+default_reranker: bge_reranker
+
+# ----------------------------------------------------------------------------
+# RETRIEVAL CONFIGURATION (CRITICAL FOR FINANCIAL DOCUMENTS)
+# ----------------------------------------------------------------------------
+retrieval:
+  # Hybrid search weights
+  vector_weight: 0.7              # 70% semantic search
+  keyword_weight: 0.3             # 30% BM25 keyword search
+  
+  # Retrieval pipeline
+  retrieval_top_k: 20             # Initial retrieval (cast wide net)
+  rerank_top_k: 5                 # After reranking (send to LLM)
+  
+  # Similarity threshold
+  similarity_threshold: 0.65      # Lower for financial terminology
+  
+  # Reranking
+  enable_rerank: true             # CRITICAL for precision
+  rerank_model: bge_reranker
+  
+  # For financial documents with exact terms
+  exact_match_boost: 1.5          # Boost exact keyword matches
+
+# ----------------------------------------------------------------------------
+# DOCUMENT PROCESSING
+# ----------------------------------------------------------------------------
+document_processing:
+  # Chunking strategy
+  chunking:
+    strategy: "semantic"          # Better than fixed for financial docs
+    chunk_size: 512               # Tokens per chunk
+    chunk_overlap: 128            # 25% overlap to preserve context
+    
+    # Structure preservation
+    respect_sentences: true       # Don't split mid-sentence
+    respect_paragraphs: true      # Keep paragraphs together when possible
+    respect_sections: true        # Keep headers with content
+    
+    # Tables (critical for financial data)
+    split_tables: false           # Keep tables intact
+    max_table_tokens: 1024        # Max size for a table chunk
+  
+  # PDF parsing (for financial reports)
+  pdf:
+    table_extraction: true        # Extract tables from PDFs
+    layout_analysis: true         # Preserve document layout
+    ocr_enabled: true             # For scanned documents
+    ocr_language: "por"           # Portuguese
+  
+  # Excel parsing
+  excel:
+    parse_sheets: true            # Parse all sheets
+    header_detection: true        # Detect headers automatically
+    preserve_formulas: false      # Convert formulas to values
+  
+  # XML parsing
+  xml:
+    preserve_structure: true      # Keep XML hierarchy
+    flatten_depth: 3              # Max nesting level to flatten
+
+# ----------------------------------------------------------------------------
+# METADATA EXTRACTION
+# ----------------------------------------------------------------------------
+metadata:
+  extract_dates: true             # Extract and index dates
+  extract_entities: true          # Company names, people
+  extract_numbers: true           # Financial figures
+  extract_currency: true          # BRL, USD, etc.
+  
+  # Custom fields for financial documents
+  custom_fields:
+    - company_name
+    - document_type               # "DRE", "balanço", "contrato"
+    - fiscal_period               # "Q3 2024", "FY 2023"
+    - report_date
+    - currency
+
+# ----------------------------------------------------------------------------
+# QUERY PROCESSING
+# ----------------------------------------------------------------------------
+query_processing:
+  # Query expansion for Portuguese financial terms
+  expand_queries: true
+  
+  # Synonyms (add more as needed)
+  synonym_expansion:
+    enabled: true
+    synonyms:
+      lucro: ["resultado", "ganho", "lucro líquido"]
+      dívida: ["endividamento", "passivo", "débito"]
+      receita: ["faturamento", "vendas", "revenue"]
+      EBITDA: ["LAJIDA", "resultado operacional"]
+      alavancagem: ["leverage", "debt ratio"]
+  
+  # Multi-query for complex questions
+  multi_query: false              # Keep simple for financial precision
+
+# ----------------------------------------------------------------------------
+# CACHING (Performance Optimization)
+# ----------------------------------------------------------------------------
+caching:
+  # Embedding cache
+  cache_embeddings: true
+  embedding_cache_size: 10000
+  
+  # Query cache
+  query_cache_enabled: true
+  query_cache_ttl: 3600           # 1 hour
+  query_cache_size: 1000
+  
+  # LLM response cache (for identical queries)
+  llm_cache_enabled: true
+  llm_cache_ttl: 7200             # 2 hours
+  llm_cache_size: 500
+
+# ----------------------------------------------------------------------------
+# PERFORMANCE SETTINGS
+# ----------------------------------------------------------------------------
+performance:
+  # Document ingestion
+  parallel_workers: 4             # Parallel document processing
+  batch_size: 16                  # Documents per batch
+  
+  # Embedding generation
+  embedding_batch_size: 32        # Batch embeddings for speed
+  embedding_workers: 2
+  
+  # Query processing
+  concurrent_queries: 4           # Max concurrent user queries
+  query_timeout: 60               # Seconds
+
+# ----------------------------------------------------------------------------
+# SYSTEM SETTINGS
+# ----------------------------------------------------------------------------
+timezone: ${TIMEZONE:-America/Sao_Paulo}
+doc_bulk_size: 4
+embedding_batch_size: 32
+
+# Logging
+log_level: INFO                   # Change to DEBUG for troubleshooting
+
+# ----------------------------------------------------------------------------
+# AGENT-SPECIFIC CONFIGURATIONS (Optional - Override in RAGFlow UI)
+# ----------------------------------------------------------------------------
+agents:
+  # Agent Estruturação - Capital Solutions
+  estruturacao:
+    retrieval_top_k: 20
+    rerank_top_k: 7               # Needs more context
+    similarity_threshold: 0.62    # Lower - needs precedents
+    vector_weight: 0.65
+    keyword_weight: 0.35          # Higher for instrument names
+    max_tokens: 2048              # Longer responses
+  
+  # Agent Monitor - Watchlist
+  monitor:
+    retrieval_top_k: 15
+    rerank_top_k: 5
+    similarity_threshold: 0.70    # Higher - exact clauses
+    vector_weight: 0.60
+    keyword_weight: 0.40          # Higher for exact matching
+    max_tokens: 1024
+  
+  # Agent Geral - Default
+  geral:
+    retrieval_top_k: 20
+    rerank_top_k: 5
+    similarity_threshold: 0.65
+    vector_weight: 0.70
+    keyword_weight: 0.30
+    max_tokens: 2048
