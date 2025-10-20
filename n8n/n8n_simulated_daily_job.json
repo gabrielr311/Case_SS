@@ -1,0 +1,468 @@
+{
+  "name": "Daily ETL Updates Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7890-abcd-ef1234567890",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Executa diariamente às 9h da manhã"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/get_updates",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f78-9012-bcde-f12345678901",
+      "name": "Check for Updates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        460,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Verifica se há novas publicações (CVM/RI/Tribunais)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_updates }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "3c4d5e6f-7890-1234-cdef-123456789012",
+      "name": "Has Updates?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Verifica se há atualizações disponíveis"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/request_etl",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "trigger_source",
+              "value": "scheduled_check"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d5e6f78-9012-3456-def1-234567890123",
+      "name": "Trigger ETL Process",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Dispara o processo de ETL para ingestão de dados"
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "5e6f7890-1234-5678-ef12-345678901234",
+      "name": "Wait for ETL",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        200
+      ],
+      "webhookId": "wait-etl-complete",
+      "notesInFlow": true,
+      "notes": "Aguarda o ETL processar (30s ou webhook)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/etl_status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "options": {}
+      },
+      "id": "6f789012-3456-7890-f123-456789012345",
+      "name": "Check ETL Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1340,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Verifica o status do processamento ETL"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "7890123-4567-8901-1234-567890123456",
+      "name": "ETL Successful?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Verifica se ETL completou com sucesso"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/update_indices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rebuild_index",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8901234-5678-9012-2345-678901234567",
+      "name": "Update Search Indices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1780,
+        100
+      ],
+      "notesInFlow": true,
+      "notes": "Atualiza índices de busca (RAGFlow/Elasticsearch)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/generate_summary",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "documents",
+              "value": "={{ $json.processed_documents }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9012345-6789-0123-3456-789012345678",
+      "name": "Generate RAG Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2000,
+        100
+      ],
+      "notesInFlow": true,
+      "notes": "Gera resumo usando RAG dos documentos processados"
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "fromEmail": "alerts@company.com",
+        "toEmail": "team@company.com",
+        "subject": "📊 Novas Publicações Processadas - {{ $now.toFormat('dd/MM/yyyy') }}",
+        "emailFormat": "html",
+        "text": "=<h2>Resumo de Atualizações</h2>\n\n<p><strong>Data:</strong> {{ $now.toFormat('dd/MM/yyyy HH:mm') }}</p>\n\n<h3>Documentos Processados</h3>\n<ul>\n{{ $json.summary.documents.map(doc => `<li><strong>${doc.type}</strong>: ${doc.title} - <a href=\"${doc.url}\">Ver documento</a></li>`).join('\\n') }}\n</ul>\n\n<h3>Resumo RAG</h3>\n<p>{{ $json.summary.rag_summary }}</p>\n\n<h3>Principais Insights</h3>\n<ul>\n{{ $json.summary.insights.map(insight => `<li>${insight}</li>`).join('\\n') }}\n</ul>\n\n<hr>\n<p><small>Processamento automático via n8n | Acesse o <a href=\"http://localhost:8000/dashboard\">Dashboard</a></small></p>",
+        "options": {}
+      },
+      "id": "0123456-7890-1234-4567-890123456789",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2220,
+        100
+      ],
+      "notesInFlow": true,
+      "notes": "Envia email com resumo e links para documentos"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/slack_webhook",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"📊 *Novas Publicações Processadas*\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"📊 Novas Publicações - {{ $now.toFormat('dd/MM/yyyy') }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Documentos:* {{ $json.summary.document_count }}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Fontes:* {{ $json.summary.sources.join(', ') }}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Resumo:*\\n{{ $json.summary.rag_summary }}\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": {\n            \"type\": \"plain_text\",\n            \"text\": \"Ver Dashboard\"\n          },\n          \"url\": \"http://localhost:8000/dashboard\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "1234567-8901-2345-5678-901234567890",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2220,
+        220
+      ],
+      "notesInFlow": true,
+      "notes": "Notificação no Slack com resumo"
+    },
+    {
+      "parameters": {
+        "mode": "logToConsole",
+        "message": "=❌ ETL falhou: {{ $json.error_message }}"
+      },
+      "id": "2345678-9012-3456-6789-012345678901",
+      "name": "Log ETL Failure",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Registra falha no processamento"
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "fromEmail": "alerts@company.com",
+        "toEmail": "devops@company.com",
+        "subject": "⚠️ Falha no Processamento ETL",
+        "text": "=O processamento ETL falhou em {{ $now.toFormat('dd/MM/yyyy HH:mm') }}.\n\nErro: {{ $json.error_message }}\n\nVerifique os logs em http://localhost:8000/logs",
+        "options": {}
+      },
+      "id": "3456789-0123-4567-7890-123456789012",
+      "name": "Alert Failure",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2000,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Alerta equipe sobre falha"
+    },
+    {
+      "parameters": {
+        "mode": "logToConsole",
+        "message": "=✅ Nenhuma atualização disponível em {{ $now.toFormat('dd/MM/yyyy HH:mm') }}"
+      },
+      "id": "4567890-1234-5678-8901-234567890123",
+      "name": "No Updates",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ],
+      "notesInFlow": true,
+      "notes": "Registra que não há atualizações"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check for Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Updates": {
+      "main": [
+        [
+          {
+            "node": "Has Updates?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Updates?": {
+      "main": [
+        [
+          {
+            "node": "Trigger ETL Process",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger ETL Process": {
+      "main": [
+        [
+          {
+            "node": "Wait for ETL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for ETL": {
+      "main": [
+        [
+          {
+            "node": "Check ETL Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check ETL Status": {
+      "main": [
+        [
+          {
+            "node": "ETL Successful?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ETL Successful?": {
+      "main": [
+        [
+          {
+            "node": "Update Search Indices",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log ETL Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Search Indices": {
+      "main": [
+        [
+          {
+            "node": "Generate RAG Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate RAG Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log ETL Failure": {
+      "main": [
+        [
+          {
+            "node": "Alert Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "daily-etl-monitor",
+  "meta": {
+    "instanceId": "your-n8n-instance-id"
+  },
+  "tags": [
+    {
+      "createdAt": "2025-10-19T12:00:00.000Z",
+      "updatedAt": "2025-10-19T12:00:00.000Z",
+      "id": "1",
+      "name": "ETL"
+    },
+    {
+      "createdAt": "2025-10-19T12:00:00.000Z",
+      "updatedAt": "2025-10-19T12:00:00.000Z",
+      "id": "2",
+      "name": "Automação"
+    }
+  ]
+}

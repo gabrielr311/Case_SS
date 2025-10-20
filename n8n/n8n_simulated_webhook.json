@@ -1,0 +1,466 @@
+{
+  "name": "Issuer Information Webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "issuer-info",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-node-001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "issuer-info-webhook",
+      "notesInFlow": true,
+      "notes": "Recebe POST com {\"ticker\": \"DEBN11\"} ou {\"issuer_cnpj\": \"12.345.678/0001-90\"}"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate input\nconst ticker = $input.item.json.body.ticker || null;\nconst issuer_cnpj = $input.item.json.body.issuer_cnpj || null;\nconst issuer_name = $input.item.json.body.issuer_name || null;\n\nif (!ticker && !issuer_cnpj && !issuer_name) {\n  return {\n    json: {\n      error: true,\n      message: \"Você deve fornecer 'ticker', 'issuer_cnpj' ou 'issuer_name'\"\n    }\n  };\n}\n\nreturn {\n  json: {\n    ticker: ticker,\n    issuer_cnpj: issuer_cnpj,\n    issuer_name: issuer_name,\n    timestamp: new Date().toISOString(),\n    error: false\n  }\n};"
+      },
+      "id": "code-validate-001",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Valida entrada e extrai ticker/CNPJ/nome"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "if-valid-001",
+      "name": "Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Verifica se entrada é válida"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/resolve_issuer",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ticker\": \"{{ $json.ticker }}\",\n  \"issuer_cnpj\": \"{{ $json.issuer_cnpj }}\",\n  \"issuer_name\": \"{{ $json.issuer_name }}\"\n}",
+        "options": {}
+      },
+      "id": "http-resolve-001",
+      "name": "Resolve Issuer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Resolve ticker/CNPJ para identificar emissor"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/latest_documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"issuer_cnpj\": \"{{ $json.issuer_cnpj }}\",\n  \"limit\": 5\n}",
+        "options": {}
+      },
+      "id": "http-docs-001",
+      "name": "Get Latest Documents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        100
+      ],
+      "notesInFlow": true,
+      "notes": "Busca últimos 5 documentos do emissor"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/legal_risks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"issuer_cnpj\": \"{{ $json.issuer_cnpj }}\",\n  \"risk_levels\": [\"high\", \"medium\"],\n  \"limit\": 10\n}",
+        "options": {}
+      },
+      "id": "http-legal-001",
+      "name": "Get Legal Risks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        220
+      ],
+      "notesInFlow": true,
+      "notes": "Busca riscos jurídicos (Alto e Médio)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/debenture_payments",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"issuer_cnpj\": \"{{ $json.issuer_cnpj }}\",\n  \"from_date\": \"{{ $now.toISO() }}\",\n  \"limit\": 10\n}",
+        "options": {}
+      },
+      "id": "http-payments-001",
+      "name": "Get Payment Schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        340
+      ],
+      "notesInFlow": true,
+      "notes": "Busca próximas datas de pagamento"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "merge-001",
+              "name": "merged_data",
+              "type": "object",
+              "value": "={{ { issuer: $('Resolve Issuer').item.json, documents: $('Get Latest Documents').item.json.documents, legal_risks: $('Get Legal Risks').item.json.risks, payment_schedule: $('Get Payment Schedule').item.json.payments } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-node-001",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        1340,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Combina todos os resultados"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the complete response\nconst data = $input.item.json.merged_data;\n\n// Format documents\nconst documents = data.documents?.map(doc => ({\n  document_type: doc.document_type,\n  title: doc.title,\n  date: doc.reference_date,\n  source: doc.source,\n  url: doc.document_url || `http://localhost:8000/documents/${doc.document_id}`,\n  summary: doc.summary || null\n})) || [];\n\n// Format legal risks\nconst legal_risks = data.legal_risks?.map(risk => ({\n  case_id: risk.case_id,\n  court: risk.court,\n  case_type: risk.case_type,\n  risk_level: risk.risk,\n  claimed_value: risk.claimed_value,\n  stage: risk.stage,\n  summary: risk.enr_principais_fatos || null,\n  impact: risk.enr_impacto_em_caso_de_perda || null,\n  last_update: risk.last_movement_date\n})) || [];\n\n// Calculate total risk exposure\nconst total_risk_exposure = legal_risks.reduce((sum, risk) => {\n  return sum + (parseFloat(risk.claimed_value) || 0);\n}, 0);\n\n// Format payment schedule\nconst payment_schedule = data.payment_schedule?.map(payment => ({\n  debenture_ticker: payment.ticker_symbol,\n  event_type: payment.event_type,\n  payment_date: payment.event_date,\n  amount: payment.amount,\n  interest_rate: payment.interest_rate || null,\n  status: payment.status || \"scheduled\"\n})) || [];\n\n// Build complete response\nconst response = {\n  success: true,\n  timestamp: new Date().toISOString(),\n  issuer: {\n    name: data.issuer?.issuer_name || \"N/A\",\n    cnpj: data.issuer?.issuer_cnpj || \"N/A\",\n    ticker: data.issuer?.ticker || \"N/A\",\n    industry: data.issuer?.industry || \"N/A\"\n  },\n  summary: {\n    total_documents: documents.length,\n    total_legal_risks: legal_risks.length,\n    total_risk_exposure_brl: total_risk_exposure,\n    upcoming_payments: payment_schedule.length\n  },\n  data: {\n    latest_documents: documents,\n    key_legal_risks: legal_risks,\n    upcoming_payments: payment_schedule\n  },\n  metadata: {\n    query_time_ms: Date.now() - new Date($('Validate Input').item.json.timestamp).getTime(),\n    api_version: \"1.0\"\n  }\n};\n\nreturn { json: response };"
+      },
+      "id": "code-format-001",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Formata resposta final com todos os dados"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success-001",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1780,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Retorna resposta de sucesso"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle error and format error response\nconst errorMessage = $input.item.json.message || \"Parâmetros inválidos\";\n\nreturn {\n  json: {\n    success: false,\n    error: {\n      message: errorMessage,\n      code: \"INVALID_INPUT\"\n    },\n    timestamp: new Date().toISOString(),\n    help: {\n      required_fields: \"Forneça 'ticker', 'issuer_cnpj' ou 'issuer_name'\",\n      example: {\n        ticker: \"DEBN11\",\n        issuer_cnpj: \"12.345.678/0001-90\",\n        issuer_name: \"Empresa XYZ S.A.\"\n      }\n    }\n  }\n};"
+      },
+      "id": "code-error-001",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        400
+      ],
+      "notesInFlow": true,
+      "notes": "Formata mensagem de erro"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-error-001",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        400
+      ],
+      "notesInFlow": true,
+      "notes": "Retorna erro 400"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log request for analytics\nconst logData = {\n  timestamp: new Date().toISOString(),\n  endpoint: \"issuer-info\",\n  input: $input.item.json,\n  ip: $input.item.json.headers?.['x-forwarded-for'] || 'unknown',\n  user_agent: $input.item.json.headers?.['user-agent'] || 'unknown'\n};\n\nconsole.log('Webhook Request:', JSON.stringify(logData, null, 2));\n\nreturn { json: logData };"
+      },
+      "id": "code-log-001",
+      "name": "Log Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        320
+      ],
+      "notesInFlow": true,
+      "notes": "Registra requisição para análise"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/log_webhook_request",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "http-log-001",
+      "name": "Store Request Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2000,
+        320
+      ],
+      "notesInFlow": true,
+      "notes": "Salva log no backend (opcional)"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Input Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Valid?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Issuer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Issuer": {
+      "main": [
+        [
+          {
+            "node": "Get Latest Documents",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Legal Risks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Payment Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Documents": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Legal Risks": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Payment Schedule": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Request": {
+      "main": [
+        [
+          {
+            "node": "Store Request Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "issuer-info-webhook",
+  "meta": {
+    "instanceId": "your-n8n-instance-id"
+  },
+  "tags": [
+    {
+      "createdAt": "2025-10-19T12:00:00.000Z",
+      "updatedAt": "2025-10-19T12:00:00.000Z",
+      "id": "3",
+      "name": "Webhook"
+    },
+    {
+      "createdAt": "2025-10-19T12:00:00.000Z",
+      "updatedAt": "2025-10-19T12:00:00.000Z",
+      "id": "4",
+      "name": "API"
+    }
+  ]
+}
